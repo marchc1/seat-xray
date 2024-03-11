@@ -8,60 +8,6 @@ local curtime = CurTime
 local IsValid = IsValid
 --local realFrameTime = RealFrameTime
 
-local function AnimationSmoother(f, z, r, _xInit)
-    local obj = {}
-
-    obj.k1 = z / (pi * f)
-    obj.k2 = 1 / ((2 * pi * f) * (2 * pi * f))
-    obj.k3 = r * z / (2 * pi * f)
-    obj.tcrit = 0.8 * (sqrt(4 * obj.k2  + obj.k1 * obj.k1) - obj.k1)
-
-    obj.xp = _xInit
-    obj.y = _xInit
-    obj.yd = 0
-
-    obj.lastupdate = curtime()
-
-    local tolerance = 0.0001
-    function obj:update(x, xd)
-        local now = curtime()
-
-        -- tolerance check
-        if self.y - tolerance <= x and x <= self.y + tolerance then
-            self.lastupdate = now
-            return self.y
-        end
-
-        -- clamped to avoid extreme delta-time updates from causing too much movement
-        local t = clamp(now - self.lastupdate, 0, 0.05)
-
-        -- don't need to run it all again if deltatime is 0
-        if t == 0 then
-            return self.y
-        end
-
-        -- i have no idea what the rest of this does
-        if xd == nil then
-            xd = (x - self.xp)
-            self.xp = x
-        end
-
-        local iterations = ceil(t / self.tcrit)
-        t = t / iterations
-
-        for i = 0, iterations do
-            self.y = self.y + t * self.yd
-            self.yd = self.yd + t * (x + self.k3 * xd - self.y - self.k1 * self.yd) / self.k2
-        end
-
-        self.lastupdate = now
-
-        return self.y
-    end
-
-    return obj
-end
-
 if SERVER then
     util.AddNetworkString("march.seatxray.request_use")
 
@@ -85,6 +31,60 @@ if SERVER then
 end
 
 if CLIENT then
+    local function AnimationSmoother(f, z, r, _xInit)
+        local obj = {}
+
+        obj.k1 = z / (pi * f)
+        obj.k2 = 1 / ((2 * pi * f) * (2 * pi * f))
+        obj.k3 = r * z / (2 * pi * f)
+        obj.tcrit = 0.8 * (sqrt(4 * obj.k2  + obj.k1 * obj.k1) - obj.k1)
+
+        obj.xp = _xInit
+        obj.y = _xInit
+        obj.yd = 0
+
+        obj.lastupdate = curtime()
+
+        local tolerance = 0.0001
+        function obj:update(x, xd)
+            local now = curtime()
+
+            -- tolerance check
+            if self.y - tolerance <= x and x <= self.y + tolerance then
+                self.lastupdate = now
+                return self.y
+            end
+
+            -- clamped to avoid extreme delta-time updates from causing too much movement
+            local t = clamp(now - self.lastupdate, 0, 0.05)
+
+            -- don't need to run it all again if deltatime is 0
+            if t == 0 then
+                return self.y
+            end
+
+            -- i have no idea what the rest of this does
+            if xd == nil then
+                xd = (x - self.xp)
+                self.xp = x
+            end
+
+            local iterations = ceil(t / self.tcrit)
+            t = t / iterations
+
+            for i = 0, iterations do
+                self.y = self.y + t * self.yd
+                self.yd = self.yd + t * (x + self.k3 * xd - self.y - self.k1 * self.yd) / self.k2
+            end
+
+            self.lastupdate = now
+
+            return self.y
+        end
+
+        return obj
+    end
+
     local seatxray_enable  = CreateConVar("seatxray_enable",  1, FCVAR_ARCHIVE, "Enables/disables all seat xray functionality. This includes both behavior & visuals.")
     local seatxray_showhud = CreateConVar("seatxray_showhud", 1, FCVAR_ARCHIVE, "Enables/disables the prompt that comes up when a seat is detected.")
 
@@ -159,16 +159,18 @@ if CLIENT then
 
         render.DepthRange(0, 0)
         for _, seat in ipairs(seats) do
-            local b = 25525 -- make it crazy bright super simply
-            if seat == lookat then
-                local a = math.sin(CurTime() * 7) * 0.1
-                render.SetBlend(0.2 + a)
-            else
-                render.SetBlend(0.1)
+            if IsValid(seat) then
+                local b = 25525 -- make it crazy bright super simply
+                if seat == lookat then
+                    local a = math.sin(CurTime() * 7) * 0.1
+                    render.SetBlend(0.2 + a)
+                else
+                    render.SetBlend(0.1)
+                end
+                render.SetColorModulation(b,b,b)
+    
+                seat:DrawModel()
             end
-            render.SetColorModulation(b,b,b)
-
-            seat:DrawModel()
         end
 
         render.SetBlend(1)
